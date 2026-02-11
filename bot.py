@@ -4,7 +4,7 @@ import pandas as pd
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
-TOKEN = os.getenv("8489267260:AAFAtiNUO7nR28S9asGs1wegs3LXEO-fe3I")
+TOKEN = "8489267260:AAFAtiNUO7nR28S9asGs1wegs3LXEO-fe3I"
 
 running = False
 
