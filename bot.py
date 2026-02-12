@@ -1,69 +1,73 @@
-import os
-import yfinance as yf
+import asyncio
+import requests
 import pandas as pd
+from ta.momentum import RSIIndicator
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
-TOKEN = os.getenv("8511210028:AAHN7ArYp-_0IebYtbLPaCgm7fGjLVIuvtI")
+TOKEN = "8511210028:AAHN7ArYp-_0IebYtbLPaCgm7fGjLVIuvtI"
 
 running = False
 
+keyboard = [["START", "STOP"]]
+markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-def get_signal():
-    df = yf.download("EURUSD=X", interval="1m", period="1d")
+# Fake market data example (you must connect real candle API later)
+def get_candles():
+    url = "https://api.binance.com/api/v3/klines?symbol=EURUSDT&interval=1m&limit=100"
+    data = requests.get(url).json()
 
-    df['support'] = df['Low'].rolling(20).min()
-    df['resistance'] = df['High'].rolling(20).max()
+    df = pd.DataFrame(data)
+    df = df.iloc[:, :6]
+    df.columns = ["time","open","high","low","close","volume"]
+    df["close"] = df["close"].astype(float)
 
-    last = df.iloc[-1]
+    return df
 
-    if last['Close'] <= last['support']:
-        return "🟢 UP SIGNAL (Support)"
-    elif last['Close'] >= last['resistance']:
-        return "🔴 DOWN SIGNAL (Resistance)"
+
+def generate_signal():
+    df = get_candles()
+
+    rsi = RSIIndicator(df["close"], window=14).rsi()
+    last_rsi = rsi.iloc[-1]
+
+    if last_rsi < 30:
+        return "🟢 UP SIGNAL\nMarket: REAL\nEntry: 5 min"
+    elif last_rsi > 70:
+        return "🔴 DOWN SIGNAL\nMarket: REAL\nEntry: 5 min"
     else:
-        return "⚪ NO TRADE ZONE"
+        return None
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [["START BOT", "STOP BOT"]]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-    await update.message.reply_text(
-        "🔥 Quotex Signal Bot Ready!",
-        reply_markup=reply_markup
-    )
+    await update.message.reply_text("Bot Ready!", reply_markup=markup)
 
 
-async def signal_loop(context: ContextTypes.DEFAULT_TYPE):
-    global running
-
-    if running:
-        signal = get_signal()
-        await context.bot.send_message(
-            chat_id=context.job.chat_id,
-            text=f"📊 {signal}"
-        )
-
-
-async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global running
 
     text = update.message.text
 
-    if text == "START BOT":
+    if text == "START":
         running = True
-        context.job_queue.run_repeating(signal_loop, interval=60, first=1, chat_id=update.effective_chat.id)
-        await update.message.reply_text("✅ Bot Started!")
+        await update.message.reply_text("✅ Signal Started")
 
-    elif text == "STOP BOT":
+        while running:
+            signal = generate_signal()
+
+            if signal:
+                await update.message.reply_text(signal)
+
+            await asyncio.sleep(60)
+
+    elif text == "STOP":
         running = False
-        await update.message.reply_text("🛑 Bot Stopped!")
+        await update.message.reply_text("⛔ Signal Stopped")
 
 
 app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT, handle_buttons))
+app.add_handler(MessageHandler(filters.TEXT, buttons))
 
 app.run_polling()
